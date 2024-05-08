@@ -436,3 +436,7 @@ func main() {
 ```
 
 这个用法有点像 trpc-go 的 filter，可以对比一下。
+
+## 5.pipeline
+
+trpc-go filter 的写法
