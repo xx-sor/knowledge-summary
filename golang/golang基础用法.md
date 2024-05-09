@@ -1,4 +1,4 @@
-1. slice 原理：
+## 1. slice 原理：
 
 ```
 type slice struct {
@@ -30,7 +30,7 @@ func main() {
 
 这里面 dir1 的初始化，使用了三索引切片的用法 a[start:end:cap],它指定了新的切片的容量为 cap-start(示例中即是 sepIndex-0)，因此对 dir1 的 append 必定造成重新分配内存，因此底层数组将被复制一份放到新的内存中，从而对 dir 的 append 不会影响 dir2。
 
-2. 深度比较
+## 2. 深度比较
    当我们复制一个对象时，这个对象可以是内建数据类型、数组、结构体、Map……在复制结构体的时候，如果我们需要比较两个结构体中的数据是否相同，就要使用深度比较，而不只是简单地做浅度比较。这里需要使用到反射 reflect.DeepEqual(),示例：
 
 ```
@@ -47,7 +47,7 @@ func main() {
 }
 ```
 
-3. 强校验我们实现了接口的小方法：
+## 3. 强校验我们实现了接口的小方法：
 
 ```
 type Shape interface {
@@ -90,7 +90,7 @@ var _ Shape = (*Square)(nil)
 
 10. 你在使用 Map 的时候，使用整型的 key 会比字符串的要快，因为整型比较比字符串比较要快。
 
-11. 接口和组合
+## 11. 接口和组合
 
 ```
 type Widget struct {
@@ -124,9 +124,10 @@ func (button Button) Click() {
 
 Button.Paint() 接口可以通过 Label 的嵌入带到新的结构体，如果 Button.Paint() 不实现的话，会调用 Label.Paint() ，所以，在 Button 中声明 Paint() 方法，相当于 Override。
 
-12.Map、Reduce、Filter
+## 12.Map、Reduce、Filter
 (1) Map 就是对数组的每个元素进行处理，处理结果还是数组
 (2) Reduce 就是对数组的每个元素进行处理，处理结果是对所有元素参数计算后的单个结果值（比如对数组元素求和）
 (3) Filter 就是过滤掉数组中其中一些元素，返回过滤后的数组
 
 这三种操作写代码时，具体操作都应该是一个处理函数作为入参，将控制逻辑和业务逻辑分开。
+
