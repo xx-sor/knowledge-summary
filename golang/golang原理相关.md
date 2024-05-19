@@ -90,6 +90,203 @@ sendq 队列中的 g 的数据拷贝到缓冲区
 
 在默认情况下会挂起当前的 g，并将 sudog 结构加入队列并陷入休眠等待调度器的唤醒
 
+#### channel 实现信号传递
+
+```
+// struct{} 是一种零字节的结构体类型，通常用于信号传递，因为它不占用任何内存空间。
+done := make(chan struct{})
+
+...
+// 代码的另外某处
+// 这行代码阻塞当前 goroutine，直到从 done channel 中接收到空struct的信号。这个信号表示前置操作已经完成。
+<-done
+
+```
+
+## 4.如何实现并发安全地读/写某个变量/资源
+
+### sync.Mutex
+
+```
+mu := sync.Mutex{}
+	mu.Lock()
+	defer mu.Unlock()
+	/// xxx 操作数据逻辑
+```
+
+### 使用一些库提供的原子操作的数据结构
+
+(1) sync/atomic 包提供了一些底层的原子操作，可以用于实现简单的并发安全操作，如计数器、自增、自减等。
+
+```
+import (
+    "sync/atomic"
+)
+
+var counter int64
+
+func increment() {
+    atomic.AddInt64(&counter, 1)
+}
+
+func getCounter() int64 {
+    return atomic.LoadInt64(&counter)
+}
+```
+
+(2) map 的话可以用 sync.Map
+
+```
+import (
+    "sync"
+)
+
+var syncMap sync.Map
+
+func storeData(key, value interface{}) {
+    syncMap.Store(key, value)
+}
+
+func loadData(key interface{}) (interface{}, bool) {
+    return syncMap.Load(key)
+}
+```
+
+### 使用 channel
+
+```
+package main
+
+import (
+    "fmt"
+    "sync"
+)
+
+// 定义一个操作类型
+type Operation struct {
+    action func()
+    // 一个常用的用法，一个channel(下面的opChan)用来保证临界区的串行执行，另一个channel(done)用来传递执行完成的信号
+    done   chan struct{}
+}
+
+func main() {
+    var data int
+    opChan := make(chan Operation)
+
+    // 用来保证goroutine执行完，主程序才结束
+    var wg sync.WaitGroup
+
+    // 启动一个 goroutine 处理所有操作
+    go func() {
+        // 这是一种常见的用法，把函数传入channel，另起一个一直运行的goroutine，for range顺序执行，保证不出现并发安全问题
+        for op := range opChan {
+            op.action()
+            close(op.done)
+        }
+    }()
+
+    // 并发写操作
+    for i := 0; i < 10; i++ {
+        wg.Add(1)
+        go func(i int) {
+            defer wg.Done()
+
+            // struct{} 是一种零字节的结构体类型，通常用于信号传递，因为它不占用任何内存空间。
+            done := make(chan struct{})
+            opChan <- Operation{
+                action: func() {
+                    data += i
+                },
+                done: done,
+            }
+            // 这个语句是为了保证本次传入opChan的action执行完成，完成了才能执行defer中的wg.Done()；这样才能保证所有的goroutine执行完成后，main函数再结束
+            <-done
+        }(i)
+    }
+
+    // 等待所有写操作完成
+    wg.Wait()
+    close(opChan)
+
+    fmt.Println("Final data value:", data)
+}
+```
+
+#### sync.WaitGroup
+
+##### 方法
+
+Add(delta int)：增加或减少等待的 goroutine 计数。delta 可以是正数（增加计数）或负数（减少计数）。
+Done()：减少等待的 goroutine 计数，相当于 Add(-1)。
+Wait()：阻塞当前 goroutine，直到 WaitGroup 的计数器变为零。
+
+##### 作用
+
+(1) 等待一组 goroutine 完成：这是 WaitGroup 最常见的用途。你可以启动多个 goroutine，并使用 WaitGroup 来等待它们全部完成。
+
+```
+package main
+
+import (
+	"fmt"
+	"sync"
+)
+
+func worker(id int, wg *sync.WaitGroup) {
+	defer wg.Done()
+	fmt.Printf("Worker %d starting\n", id)
+	// 模拟工作
+	fmt.Printf("Worker %d done\n", id)
+}
+
+func main() {
+	var wg sync.WaitGroup
+
+	for i := 1; i <= 5; i++ {
+		wg.Add(1)
+		go worker(i, &wg)
+	}
+
+	wg.Wait()
+	fmt.Println("All workers done")
+}
+
+```
+
+(2) 同步操作：在某些情况下，你可能需要确保某些操作在特定的顺序内完成。WaitGroup 可以帮助你实现这种同步。
+
+```
+// 在另一处执行传入opChan中匿名函数
+...
+
+// WaitGroup 被用来确保写入result操作在从 result channel 读取之前完成
+func (this *LRUCache) Get(key int) int {
+	result := make(chan int)
+	this.wg.Add(1)
+	this.opChan <- func() {
+		curNode, ok := this.valMap[key]
+		if !ok {
+			result <- -1
+		} else {
+			this.updateRecentUse(curNode)
+			result <- curNode.Val
+		}
+		close(result)
+		this.wg.Done()
+	}
+	this.wg.Wait()
+	return <-result
+}
+
+```
+
+## 5.变量可见性
+
+在 Go 语言中，标识符（如变量、函数、类型等）的可见性是通过首字母大小写来控制的。首字母大写的标识符是导出的（即公共的），可以被其他包访问；首字母小写的标识符是未导出的（即私有的），只能在定义**它们的包内**访问。
+
+Go 语言并没有像 C++ 那样的 private、protected 等访问控制修饰符。Go 语言的设计哲学是简单和明确，因此它只提供了包级别的可见性控制。
+如果想让一个结构体的成员变量只有这个结构体的实例自己能访问，一种方法是将结构体定义在一个单独的包中，并将成员变量定义为未导出。这样，只有这个包内的代码可以访问这些成员变量，而包外的代码只能通过导出的方法来访问。
+
 map
 使用拉链法解决 hash 碰撞问题
 
