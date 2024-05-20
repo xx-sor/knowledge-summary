@@ -1,3 +1,16 @@
+
+
+<!-- toc -->
+
+- [1. slice 原理：](#1-slice-%E5%8E%9F%E7%90%86)
+- [2. 深度比较](#2-%E6%B7%B1%E5%BA%A6%E6%AF%94%E8%BE%83)
+- [3. 强校验我们实现了接口的小方法：](#3-%E5%BC%BA%E6%A0%A1%E9%AA%8C%E6%88%91%E4%BB%AC%E5%AE%9E%E7%8E%B0%E4%BA%86%E6%8E%A5%E5%8F%A3%E7%9A%84%E5%B0%8F%E6%96%B9%E6%B3%95)
+- [11. 接口和组合](#11-%E6%8E%A5%E5%8F%A3%E5%92%8C%E7%BB%84%E5%90%88)
+- [12.Map、Reduce、Filter](#12mapreducefilter)
+- [13.无缓冲 channel 和有缓冲 channel 的使用场景](#13%E6%97%A0%E7%BC%93%E5%86%B2-channel-%E5%92%8C%E6%9C%89%E7%BC%93%E5%86%B2-channel-%E7%9A%84%E4%BD%BF%E7%94%A8%E5%9C%BA%E6%99%AF)
+
+<!-- tocstop -->
+
 ## 1. slice 原理：
 
 ```

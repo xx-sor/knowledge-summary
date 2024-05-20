@@ -1,3 +1,19 @@
+
+
+<!-- toc -->
+
+- [1.对象编程方法的黄金法则——“Program to an interface not an implementation”。](#1%E5%AF%B9%E8%B1%A1%E7%BC%96%E7%A8%8B%E6%96%B9%E6%B3%95%E7%9A%84%E9%BB%84%E9%87%91%E6%B3%95%E5%88%99program-to-an-interface-not-an-implementation)
+- [2.Functional Options](#2functional-options)
+  * [解决什么问题](#%E8%A7%A3%E5%86%B3%E4%BB%80%E4%B9%88%E9%97%AE%E9%A2%98)
+  * [解决历程](#%E8%A7%A3%E5%86%B3%E5%8E%86%E7%A8%8B)
+- [3.控制反转](#3%E6%8E%A7%E5%88%B6%E5%8F%8D%E8%BD%AC)
+- [4.修饰器模式](#4%E4%BF%AE%E9%A5%B0%E5%99%A8%E6%A8%A1%E5%BC%8F)
+  * [解决什么问题](#%E8%A7%A3%E5%86%B3%E4%BB%80%E4%B9%88%E9%97%AE%E9%A2%98-1)
+  * [具体内容](#%E5%85%B7%E4%BD%93%E5%86%85%E5%AE%B9)
+- [5.pipeline](#5pipeline)
+
+<!-- tocstop -->
+
 ## 1.对象编程方法的黄金法则——“Program to an interface not an implementation”。
 
 示例：
