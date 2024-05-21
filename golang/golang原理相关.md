@@ -96,29 +96,75 @@ stw 结束
 
 ## 3.channel
 
+### 理念
 不要通过共享内存的方式进行通信，而是应该通过通信的方式共享内存
 
-#### channel 数据结构：
 
-元素个数(qcount)； 循环队列长度(dataqsiz)；缓冲区数据指针(buf)；发送操作处理到的位置(sendx)；接收操作处理到位置(recvx)
+### 原理
+#### channel 数据结构：
+```
+type hchan struct {
+	qcount   uint    // Channel 中的元素个数；当sendx == recvx时，他可以用来判断是满了还是空了，避免二义性
+	dataqsiz uint    // Channel 中的循环队列的长度
+	buf      unsafe.Pointer    // Channel 的缓冲区数据指针
+	elemsize uint16    // 当前chan中存的元素的类型的大小
+	closed   uint32    // 通道是否被关闭的标志
+	elemtype *_type    // 队列元素的类型
+	sendx    uint    // Channel 的发送操作处理到的位置,
+	recvx    uint    // Channel 的接收操作处理到的位置
+	recvq    waitq    // 由于缓冲区不足而阻塞的接收goroutine的列表，使用双向链表 runtime.waitq 表示
+	sendq    waitq    // 由于缓冲区不足而阻塞的发送goroutine的列表，使用双向链表 runtime.waitq 表示
+
+	lock mutex   // 读写都用这一把锁，也就是说读的时候就不能写
+}
+
+// runtime.sudog 表示一个在等待列表中的 Goroutine，该结构中存储了两个分别指向前后 runtime.sudog 的指针以构成链表。
+type waitq struct {
+	first *sudog
+	last  *sudog
+}
+
+//src/runtime/chan.go
+type sudog struct{
+    g *g //记录哪个协程在等待
+    
+    
+    next *sudog
+    prev *sudog
+    elem unsafe.Pointer // 等待发送/接收的数据在哪里
+    
+    ...
+    
+    c *chan //等待的是哪个channel
+}
+
+```
+
+#### 创建策略
+无缓冲的直接分配内存
+有缓冲的不包含指针，为hchan和底层数组分配连续的地址
+有缓冲的channel且包含元素指针，会为hchan和底层数组分配地址
 
 #### channel 发送数据原理 （ch<- i）：
 
 (1)加锁(如 channel 已关闭会报错)
-(2)当存在等待接收者时，会直接发送。直接发送过程是 ：将发送的数据直接**拷贝**到接收变量的内存地址上； 把等待接收数据的 goroutine 设置成 grunnable(可运行状态)，并把该 g 放到发送方所在的处理器的 runnext 上等待执行，该处理器在下一次调度时会立刻唤醒数据的接收方
+(2)当存在等待接收者时，会直接发送。直接发送过程是 ：将发送的数据直接**拷贝**到接收变量的内存地址上； 把等待接收数据的 goroutine 设置成 grunnable(可运行状态)，并把该 g 放到发送方所在的处理器(P，GMP模型的P)的 runnext 上等待执行，该处理器在下一次调度时会立刻唤醒数据的接收方
 (3)当缓冲区存在空余空间时，将发送的数据写入 channel 的缓冲区(sendx)
 (4)当不存在缓冲区或者缓冲区已满的时候，等待其他 goroutine 从 channel 接收数据
+(5)解锁（4中挂起的情况也会解锁）
+
+注：
+runnext 是处理器（P）数据结构中的一个字段，它用于存储一个特定的 goroutine，这个 goroutine 将会在下一次该处理器进行调度时优先执行。这是一种优化机制，允许运行时系统快速响应某些事件，比如 channel 的通信。
 
 #### channel 接收数据
-
-(1)如果 channel 中数据为空，挂起当前 g
-(2)如果 channel 已关闭且缓冲区没有数据，直接返回
-(3)如果 sendq 队列存在已经挂起的 g，会将数据拷贝到接收变量所在的内存空间，并将
-sendq 队列中的 g 的数据拷贝到缓冲区
-
-如果 channel 的缓冲区包含数据，直接读取 接收操作处理到位置 recvx 对应的数据
-
-在默认情况下会挂起当前的 g，并将 sudog 结构加入队列并陷入休眠等待调度器的唤醒
+(1)加锁。
+(2)如果channel的写等待队列存在发送者goroutinue：
+如果是无缓冲channel，直接从第一个发送者goroutinue将数据拷贝给接收变量，唤醒发送的goroutinue
+如果是有缓冲channel（已满），将循环数组buf的队首元素拷贝给接收变量，将第一个发送者goroutinue的数据拷贝到buf循环数组，唤醒发送的goroutinue
+如果channel的写等待不存在发送者goroutinue：
+如果循环数组buf非空，将循环数组buf的队首元素拷贝给接收变量
+如果循环数组buf为空，这个时候就会走阻塞接收的流程，将当前 goroutine 加入读等待队列，并挂起等待唤醒
+(3)解锁
 
 #### channel 实现信号传递
 
@@ -132,6 +178,10 @@ done := make(chan struct{})
 <-done
 
 ```
+
+#### channel的垃圾回收
+Golang 的垃圾回收机制对于 Channel 也适用。如果**一个 Channel 不再被任何 Goroutine 使用**，那么它所占用的内存空间就可以被回收。Golang 的垃圾回收是自动进行的，不需要程序员手动操作。
+
 
 ## 4.如何实现并发安全地读/写某个变量/资源
 
@@ -328,8 +378,53 @@ type slice struct {
 ```
 这个实现中连锁都没有，不可能是并发安全的。
 
-### append的实现原理
+### 具体原因
+(1)共享底层数组：切片是对数组的封装，它包含指向数组的指针、切片的长度和容量。当多个切片共享同一个底层数组时，如果没有适当的同步，一个goroutine对底层数组的修改可能会影响到其他goroutine。
 
+(2)切片操作非原子性：切片的操作，如append、slice[1:4]等，不是原子性的。这意味着在操作过程中，其他goroutine可能会看到不一致的状态。
+
+(3)长度和容量的修改：当你对切片进行append操作时，如果切片的容量不足以容纳更多的元素，Go运行时会分配一个新的底层数组，并更新切片的指针、长度和容量。如果这个时候有另一个goroutine正在读取或写入切片，就可能会发生竞态条件。
+
+
+### 解决方法
+(1)加锁
+
+(2)channel
+```
+package main
+
+import (
+    "fmt"
+)
+
+func main() {
+    ch := make(chan int, 5)
+    done := make(chan bool)
+
+    for i := 0; i < 5; i++ {
+        go func(i int) {
+            ch <- i
+        }(i)
+    }
+
+    go func() {
+        for i := 0; i < 5; i++ {
+            fmt.Println(<-ch)
+        }
+        done <- true
+    }()
+
+    <-done
+}
+```
+
+### append的实现原理
+当调用 append 函数时，它会首先检查切片的容量是否足够。如果容量足够，append 函数会在底层数组的未尾添加新的元素，并更新切片的长度。如果容量不足，append 函数会创建一个新的底层数组，并将原始切片的元素复制到新的底层数组中，然后再添加新的元素。其中更新容量时，如果需要重新分配，当容量小于1024时，新的数组容量翻倍；否则变为1.25倍。前者是为了防止频繁申请内存；后者是为了防止浪费内存。
+
+
+## 7.竟态条件
+### 定义
+竞态条件是并发编程中的一个概念，它发生在两个或多个操作必须以正确的顺序执行，但程序的运行时行为却无法保证这一顺序，从而导致不可预知的结果。简单来说，当多个线程或进程访问和修改同一数据时，最终的结果依赖于这些线程或进程的具体执行顺序，这就是竞态条件。
 
 
 map
