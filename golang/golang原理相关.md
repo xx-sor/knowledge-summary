@@ -436,6 +436,172 @@ func main() {
 竞态条件是并发编程中的一个概念，它发生在两个或多个操作必须以正确的顺序执行，但程序的运行时行为却无法保证这一顺序，从而导致不可预知的结果。简单来说，当多个线程或进程访问和修改同一数据时，最终的结果依赖于这些线程或进程的具体执行顺序，这就是竞态条件。
 
 
+## 8.string是并发安全的么？
+golang中string是读并发安全，但写非并发安全的。
+string一旦被创建，便不能修改。我们代码中的修改，实际上都是重新申请了一片新的内存。
+
+### string源码
+```
+type stringStruct struct {
+	str unsafe.Pointer
+	len int
+}
+```
+
+### 代码说明
+(1)并发读取字符串是安全的：
+
+```go
+func main() {
+    s := "hello, world"
+    go func() {
+        fmt.Println(s)
+    }()
+    go func() {
+        fmt.Println(s)
+    }()
+}
+```
+
+在这个例子中，我们在两个 goroutine 中同时读取同一个字符串 `s`。这是完全安全的，因为字符串是不可变的，所以我们不需要担心其中一个 goroutine 会改变 `s` 的内容。
+
+(2)并发修改字符串变量可能会导致竞态条件：
+
+```go
+func main() {
+    s := "hello"
+    go func() {
+        s = s + ", world"
+    }()
+    go func() {
+        s = s + "!"
+    }()
+    time.Sleep(time.Second)
+    fmt.Println(s)
+}
+```
+
+在这个例子中，我们在两个 goroutine 中同时修改同一个字符串变量 `s`。这可能会导致竞态条件，因为我们不能预测 `s` 的最终值是什么，这取决于哪个 goroutine 最后执行了赋值操作。
+
+(3)使用锁来同步并发修改字符串变量：
+
+```go
+func main() {
+    var mu sync.Mutex
+    s := "hello"
+    go func() {
+        mu.Lock()
+        s = s + ", world"
+        mu.Unlock()
+    }()
+    go func() {
+        mu.Lock()
+        s = s + "!"
+        mu.Unlock()
+    }()
+    time.Sleep(time.Second)
+    fmt.Println(s)
+}
+```
+
+在这个例子中，我们使用了一个互斥锁来同步两个 goroutine 对字符串变量 `s` 的修改。这样我们就可以确保 `s` 的最终值是 "hello, world!"，因为每次只有一个 goroutine 可以修改 `s`。
+
+## 9.unsafe.Pointer
+`unsafe.Pointer` 是 Go 语言中的一个特殊类型，它允许程序员在类型系统的约束下进行某些操作。它的定义如下：
+```go
+type Pointer *ArbitraryType
+```
+
+### 特性
+(1)任何类型的指针都可以被转化为 `unsafe.Pointer`。
+(2)`unsafe.Pointer` 可以被转化为任何类型的指针。
+(3)`unsafe.Pointer` 可以被转化为 `uintptr`（一个用于存储指针的整数类型），反之亦然。
+
+### 应用
+Go 语言中的 `unsafe` 包和 `unsafe.Pointer` 主要用于绕过 Go 语言的类型系统，进行一些底层的、灵活的操作。它们的使用场景包括：
+(1)实现跨类型的转换：你可以将一个类型的指针转换为 `unsafe.Pointer`，然后再转换为另一个类型的指针。
+```
+package main
+
+import (
+	"fmt"
+	"unsafe"
+)
+
+func main() {
+	i := 10
+	f := *(*float64)(unsafe.Pointer(&i))
+	fmt.Println(f)
+}
+```
+
+(2)访问结构体的私有字段：在 Go 语言中，你不能直接访问一个包外的结构体的私有字段。但是，你可以通过 `unsafe.Pointer` 来绕过这个限制。
+```
+package main
+
+import (
+	"fmt"
+	"unsafe"
+)
+
+type Foo struct {
+	a int
+	b string
+}
+
+func main() {
+	f := Foo{10, "hello"}
+	p := (*string)(unsafe.Pointer(uintptr(unsafe.Pointer(&f)) + unsafe.Offsetof(f.b)))
+	*p = "world"
+	fmt.Println(f)
+}
+```
+
+(3)实现二进制序列化：如果你知道一个数据结构的内存布局，你可以使用 `unsafe.Pointer` 来直接将其序列化为二进制数据，或者从二进制数据中反序列化。
+```
+package main
+
+import (
+	"fmt"
+	"unsafe"
+)
+
+type Foo struct {
+	a int
+	b string
+}
+
+func main() {
+	f := Foo{10, "hello"}
+	p := (*[unsafe.Sizeof(f)]byte)(unsafe.Pointer(&f))
+	fmt.Println(p)
+}
+```
+
+(4)调用系统调用或者调用 C 语言的函数：在这些情况下，你可能需要直接操作内存或者构造特定的数据结构。
+需要注意的是，虽然 `unsafe.Pointer` 提供了很大的灵活性，但是它也带来了一些风险。使用 `unsafe.Pointer` 可能会破坏类型安全，导致程序崩溃或者数据损坏。因此，除非必要，否则应该尽量避免使用 `unsafe.Pointer`。
+```
+package main
+
+/*
+#include <stdlib.h>
+*/
+import "C"
+import (
+	"fmt"
+	"unsafe"
+)
+
+func main() {
+	cs := C.CString("Hello from stdlib")
+	fmt.Println(*(*string)(unsafe.Pointer(&cs)))
+	C.free(unsafe.Pointer(cs))
+}
+```
+
+### 注意
+在实际的代码中应该尽量避免使用 unsafe.Pointer
+
 map
 使用拉链法解决 hash 碰撞问题
 
