@@ -602,6 +602,8 @@ func main() {
 ### 注意
 在实际的代码中应该尽量避免使用 unsafe.Pointer
 
+
+
 map
 使用拉链法解决 hash 碰撞问题
 
@@ -720,7 +722,7 @@ tab ： itab ： inter ： 指向接口类型本身信息的指针，\_type : �
 make 和 new
 new 用于分配内存，会返回类型的指针，值会被初始化为”0“ make 仅用于分配和初始化 slice、map、channel 类型的对象，3 种类型都是结构，返回类型是结构不是指针。
 
-锁
+## 锁
 sync.Mutex
 数据结构
 
@@ -740,7 +742,7 @@ waitersCount 当前互斥锁上等待的 goroutine 个数
 
 加锁过程 ：
 
-如果互斥锁处于初始化状态，会通 mutexLocked 加锁如果互斥锁处于 mutexLocked 状态并在普通模式下工作，会进入自旋，执行 30 次 PAUSE 指令消耗 cpu 时间等待锁的释放
+如果互斥锁处于初始化状态，会通 mutexLocked 加锁,如果互斥锁处于 mutexLocked 状态并在普通模式下工作，会进入自旋，执行 30 次 PAUSE 指令消耗 cpu 时间等待锁的释放
 
 如果当前 goroutine 等待锁的时间超过 1ms，互斥锁就会切换到饥饿模式，
 互斥锁在正常情况下会尝试获取锁的 goroutine 切换至休眠状态，等待锁的持有者唤醒
