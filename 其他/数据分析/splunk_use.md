@@ -127,4 +127,40 @@ $SPLUNK_HOME/var/lib/splunk/main/
 
 ```
 
+# 告警
+## 告警配置
+### 告警触发后操作
+#### 日志事件
+为可搜索的告警事件建⽴⽇志和索引。
+##### 存储位置
+在配置告警触发后操作中有"日志事件"的情况下，当告警被触发后，相关日志事件会被记录在 Splunk 内部日志中。具体来说，这些日志事件会被记录在 _internal 索引中，该索引存储了 Splunk 自身的操作日志和内部活动信息。
+```
+$SPLUNK_HOME/var/log/splunk/scheduler.log
+```
+但这个日志文件不仅包含告警信息，还包含调度器执行的搜索等信息。
+
+如果要过滤出只有告警信息的日志行：
+```
+import re
+
+def filter_alerts(input_file, output_file):
+    # 定义告警事件的正则表达式模式
+    # 使用正则表达式 savedsearch_name=".*" 来匹配包含告警事件的日志行。savedsearch_name 是告警事件日志行中常见的字段。
+    alert_pattern = re.compile(r'savedsearch_name=".*"')
+
+    with open(input_file, 'r') as infile, open(output_file, 'w') as outfile:
+        for line in infile:
+            # 检查行是否包含告警事件
+            if alert_pattern.search(line):
+                outfile.write(line)
+
+if __name__ == "__main__":
+    input_file = "/opt/splunk/var/log/splunk/scheduler.log"  # 请根据实际安装路径修改
+    output_file = "alerts_only.log"
+    filter_alerts(input_file, output_file)
+    print(f"Filtered alert events written to {output_file}")
+
+
+```
+
 
