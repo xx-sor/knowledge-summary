@@ -33,6 +33,14 @@
   * [append的实现原理](#append%E7%9A%84%E5%AE%9E%E7%8E%B0%E5%8E%9F%E7%90%86)
 - [7.竟态条件](#7%E7%AB%9F%E6%80%81%E6%9D%A1%E4%BB%B6)
   * [定义](#%E5%AE%9A%E4%B9%89)
+- [8.string是并发安全的么？](#8string%E6%98%AF%E5%B9%B6%E5%8F%91%E5%AE%89%E5%85%A8%E7%9A%84%E4%B9%88)
+  * [string源码](#string%E6%BA%90%E7%A0%81)
+  * [代码说明](#%E4%BB%A3%E7%A0%81%E8%AF%B4%E6%98%8E)
+- [9.unsafe.Pointer](#9unsafepointer)
+  * [特性](#%E7%89%B9%E6%80%A7)
+  * [应用](#%E5%BA%94%E7%94%A8)
+  * [注意](#%E6%B3%A8%E6%84%8F)
+- [锁](#%E9%94%81)
 
 <!-- tocstop -->
 
