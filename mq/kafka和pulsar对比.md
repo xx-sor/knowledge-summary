@@ -1,8 +1,11 @@
 # 订阅模式
-Exclusive	一个订阅只能有一个消费者
-Failover	主备模式（按 partition 分配）
-Shared	多个消费者并发消费同一个订阅（支持并发）
-Key_Shared	按 key 保证顺序，支持并发消费
+1. Exclusive	一个订阅只能有一个消费者
+2. Failover	主备模式（按 partition 分配）
+每个 partition 同时只由一个 consumer 消费。多个消费者可以分别消费不同 partition。
+即：同一订阅下，每个 partition 在任意时刻只会被一个消费者处理，其他消费者处于 standby 状态。
+和Exclusive的区别就是Exclusive的消费者如果挂了就没有消费者了，但Failover就会有备消费者来消费。
+3. Shared	多个消费者并发消费同一个订阅（支持并发）
+4. Key_Shared	按 key 保证顺序，支持并发消费
 
 # 消费机制和提交顺序
 ## kafka
@@ -43,24 +46,47 @@ pulsar为了支持每条消息可以ack，给broker引入了状态。带来了�
 3. 消费者组rebalance或failover时的状态一致性
 
 #### 性能问题解决
-##### IO问题
-1. ack操作放在内存中，ack请求不会立刻写磁盘，而是异步更新，后台线程会定期把 ack 状态同步到 BookKeeper（持久化）:
-Pulsar 使用 Apache BookKeeper 存储消息日志（data）和 ledger metadata（ack、cursor 等）。
-每个订阅（subscription）会维护一个 AckedMessageTracker 和一个 Cursor。
-Cursor 的更新是顺序追加（append-only），而不是随机写。并且写入是异步、批量的（由 Broker 定时 flush）。
+1. 批量ACK合并(ack grouping)：
+Pulsar 提供了 ack grouping 参数，允许客户端：
+定时（如 100ms）或每 N 条消息后批量发送 ack
+Broker 接收到的是一个“ack range”或“ack bitmap”而不是单条 ack。
+2. 并发ACK时可能同时修改同一个分区的 ack 状态的数据一致性问题：
+解决方案：
+基于分片锁 + 高效 bitmap + 异步 flush
+##### 分片锁？
+1. 内部使用 fine-grained lock（分段锁）保护 Cursor 状态更新
+2. ack 操作通过事件队列或线程池串行处理，避免竞争
+
+
+##### bitmap？
+Pulsar 使用 RoaringBitmap 存储已 ack 的消息 ID（entryId）。
+每个 Cursor 内部维护一个 bitmap，表示「哪些 entry 被 ack」。
+并发 ack 操作直接对 bitmap 做线程安全的更新（或通过事件线程串行执行）。
+
+##### 使用事件线程（EventLoop）串行化 Cursor 操作？
+每个 Topic/Subscription 在 Broker 侧有一个 Dispatcher（消息投递器）。
+Dispatcher 绑定一个专属事件线程（单线程），负责处理所有 ack、redeliver、flow 控制等事件。
+所以 ack 请求虽然来自多个 Consumer，但最终在 Broker 端被串行处理。
+
+
+#### IO问题
+1. ack操作放在内存中，ack请求不会立刻写磁盘，而是异步更新，后台线程会定期把 ack 状态同步到 BookKeeper（Pulsar 使用 Apache BookKeeper 存储消息日志（data）和 ledger metadata（ack、cursor 等））（持久化）:
+(1)每个订阅（subscription）会维护一个 AckedMessageTracker 和一个 Cursor。
+(2)Cursor 的更新是顺序追加（append-only），而不是随机写。并且写入是异步、批量的（由 Broker 定时 flush）。
 
 ###### AckedMessageTracker
 
 ###### Cursor
 
 
-##### 性能问题
-2. 批量ACK合并(ack grouping)：
-Pulsar 提供了 ack grouping 参数，允许客户端：
-定时（如 100ms）或每 N 条消息后批量发送 ack
-Broker 接收到的是一个“ack range”或“ack bitmap”而不是单条 ack。
+#### 消费者组 rebalance / failover 时的状态一致性
+Pulsar 为每个 Subscription + Topic 创建一个 Cursor，Cursor 中记录：
+(1)cumulative ack position（累积 ack 到哪）
+(2)individual ack set（哪些消息单独 ack 了）
+(3)pending ack（未 ack 的消息）
 
-##### 消费者组 rebalance / failover 时的状态一致性
+当消费者断开或 failover 时：
+新消费者接管 subscription，Broker 会从 Cursor 中获取未 ack 消息，未 ack 消息支持 redelivery。
 
 
 # ledger
